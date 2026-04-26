@@ -66,8 +66,6 @@ const GROUP_COLORS: Record<string, string> = {
   Imaging: 'text-emerald-700 border-emerald-200 bg-emerald-50',
 }
 
-const API_URL = 'http://127.0.0.1:8000/predict'
-
 const riskTextColor: Record<string, string> = {
   High: 'text-red-600',
   Medium: 'text-amber-600',
@@ -92,12 +90,16 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [fullCheck, setFullCheck] = useState(true);
+  const [fullCheck, setFullCheck] = useState(true)
 
   // Visible Groups
-  const visibleGroups = fullCheck 
+  const visibleGroups = fullCheck
     ? ['Demographic', 'Clinical', 'Laboratory', 'Imaging']
     : ['Demographic', 'Clinical']
+
+  const activeFields = FIELDS.filter((f) => visibleGroups.includes(f.group))
+
+  const API_URL = fullCheck ? 'http://127.0.0.1:8000/predict' : 'http://127.0.0.1:8000/predict-clinical'
 
   const handleChange = (key: string, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -106,7 +108,7 @@ export default function Home() {
   }
 
   const handleSubmit = async () => {
-    const missing = FIELDS.filter((f) => !form[f.key] && form[f.key] !== '0')
+    const missing = activeFields.filter((f) => !form[f.key] && form[f.key] !== '0')
     if (missing.length > 0) {
       setError(`Please fill in: ${missing.map((f) => f.label).join(', ')}`)
       return
@@ -117,7 +119,7 @@ export default function Home() {
 
     try {
       const payload = Object.fromEntries(
-        FIELDS.map((f) => [
+        activeFields.map((f) => [
           f.key,
           f.type === 'number' ? parseFloat(form[f.key]) : form[f.key],
         ])
@@ -146,7 +148,7 @@ export default function Home() {
   }
 
   const fillDummyData = () => {
-    setForm({
+    const dummyFull: FormData = {
       Age: '14.1', Sex: 'male', Height: '147.0', Weight: '69.5', BMI: '31.9',
       Migratory_Pain: 'yes', Lower_Right_Abd_Pain: 'yes',
       Contralateral_Rebound_Tenderness: 'yes', Ipsilateral_Rebound_Tenderness: 'no',
@@ -154,15 +156,37 @@ export default function Home() {
       Body_Temperature: '36.9', Peritonitis: 'no', WBC_Count: '8.16',
       Neutrophil_Percentage: '64.8', Neutrophilia: 'no', CRP: '3.0',
       Appendix_on_US: 'no', Appendix_Diameter: '0', Free_Fluids: 'no',
+    }
+    const dummyClinical: FormData = {
+      Age: '14.1', Sex: 'male', Height: '147.0', Weight: '69.5', BMI: '31.9',
+      Migratory_Pain: 'yes', Lower_Right_Abd_Pain: 'yes',
+      Contralateral_Rebound_Tenderness: 'yes', Ipsilateral_Rebound_Tenderness: 'no',
+      Coughing_Pain: 'no', Psoas_Sign: 'negative', Nausea: 'no',
+      Body_Temperature: '36.9', Peritonitis: 'no',
+    }
+    setForm(fullCheck ? dummyFull : dummyClinical)
+  }
+
+  const switchToClinical = () => {
+    setFullCheck(false)
+    setForm((prev) => {
+      const next = { ...prev }
+      FIELDS.filter((f) => f.group === 'Laboratory' || f.group === 'Imaging').forEach((f) => {
+        delete next[f.key]
+      })
+      return next
     })
+    setResult(null)
+    setError(null)
   }
 
-  const changeFormType = () => {
-    setFullCheck(!fullCheck);
+  const switchToFull = () => {
+    setFullCheck(true)
+    setResult(null)
+    setError(null)
   }
 
-
-  const filledCount = FIELDS.filter((f) => form[f.key] !== undefined && form[f.key] !== '').length
+  const filledCount = activeFields.filter((f) => form[f.key] !== undefined && form[f.key] !== '').length
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
@@ -196,16 +220,24 @@ export default function Home() {
             Enter clinical features to assess appendicitis risk using an ML based prediction model.
           </p>
 
+          <ul className="text-xs md:text-sm text-gray-600 mb-6 list-disc pl-5 space-y-1">
+            <li>Clinical-only model accuracy: <strong>~70%</strong></li>
+            <li>Full model (with additional data) accuracy: <strong>~93%</strong></li>
+            <li>This tool is for risk estimation — not a medical diagnosis</li>
+            <li>Always seek professional medical advice for confirmation</li>
+            <li>If risk appears medium or high, consult a doctor immediately</li>
+          </ul>
+
           {/* Progress */}
           <div className="mb-6">
             <div className="flex justify-between text-xs text-gray-600 mb-1">
               <span>Fields completed</span>
-              <span>{filledCount} / {FIELDS.length}</span>
+              <span>{filledCount} / {activeFields.length}</span>
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-slate-600 rounded-full transition-all duration-300"
-                style={{ width: `${(filledCount / FIELDS.length) * 100}%` }}
+                style={{ width: `${(filledCount / activeFields.length) * 100}%` }}
               />
             </div>
           </div>
@@ -243,27 +275,27 @@ export default function Home() {
           <div className="mx-auto max-w-4xl flex flex-col gap-6">
 
           <div className='flex gap-6 w-full items-center'>
-            <button 
+            <button
               className={`
                 flex-1 p-1 rounded-xl cursor-pointer transition-colors duration-200
-                ${!fullCheck 
-                  ? 'bg-slate-600 text-white hover:bg-slate-700' 
+                ${!fullCheck
+                  ? 'bg-slate-600 text-white hover:bg-slate-700'
                   : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
                 }
               `}
-              onClick={changeFormType}
+              onClick={switchToClinical}
             >
               Clinical Model
             </button>
-            <button 
+            <button
               className={`
                 flex-1 p-1 rounded-xl cursor-pointer transition-colors duration-200
-                ${fullCheck 
-                  ? 'bg-slate-600 text-white hover:bg-slate-700' 
+                ${fullCheck
+                  ? 'bg-slate-600 text-white hover:bg-slate-700'
                   : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
                 }
               `}
-              onClick={changeFormType}
+              onClick={switchToFull}
             >
               Full Model
             </button>
@@ -279,7 +311,7 @@ export default function Home() {
               </h1>
               <p className="text-sm text-gray-600 max-w-xl">
                 All{' '}
-                <span className="font-semibold text-gray-800">{FIELDS.length} features</span> are
+                <span className="font-semibold text-gray-800">{activeFields.length} features</span> are
                 required to run a prediction.
               </p>
             </div>
